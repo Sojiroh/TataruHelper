@@ -62,6 +62,8 @@ namespace TataruHelper.Tests.Services.Settings
             Assert.That(window.Name, Is.EqualTo("1"));
             Assert.That(window.WinId, Is.EqualTo(0));
             Assert.That(window.TranslationEngineName, Is.EqualTo(TranslationEngineName.YandexFree));
+            Assert.That(string.IsNullOrEmpty(window.TabGroupId), Is.True);
+
         }
 
         [Test]
@@ -116,6 +118,39 @@ namespace TataruHelper.Tests.Services.Settings
             Assert.That(userSettings.ChatWindows.Select(x => x.WinId), Is.EqualTo(new long[] { 0, 1 }));
             Assert.That(userSettings.ChatWindows[0].Name, Is.EqualTo("First"));
             Assert.That(userSettings.ChatWindows[1].Name, Is.EqualTo("2"));
+        }
+
+        [Test]
+        public void LoadUserSettings_WinIdNormalizationPreservesTabGroupIdentity()
+        {
+            var settingsOnDisk = new UserSettings();
+            settingsOnDisk.ChatWindows.Add(new ChatWindowViewModelSettings("First", 17)
+            {
+                TabGroupId = "11111111-1111-1111-1111-111111111111",
+                IsActiveTab = false
+            });
+            settingsOnDisk.ChatWindows.Add(new ChatWindowViewModelSettings("Second", 99)
+            {
+                TabGroupId = "11111111-1111-1111-1111-111111111111",
+                IsActiveTab = true
+            });
+            settingsOnDisk.ChatWindows.Add(new ChatWindowViewModelSettings("Standalone", 101));
+            Helper.SaveJson(settingsOnDisk, _settingsStore.SettingsPath);
+
+            var userSettings = _service.LoadUserSettings("sys.json", NoChatCodes(), NoEngines());
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(userSettings.ChatWindows.Select(x => x.WinId),
+                    Is.EqualTo(new long[] { 0, 1, 2 }));
+                Assert.That(userSettings.ChatWindows[0].TabGroupId,
+                    Is.EqualTo("11111111-1111-1111-1111-111111111111"));
+                Assert.That(userSettings.ChatWindows[0].IsActiveTab, Is.False);
+                Assert.That(userSettings.ChatWindows[1].TabGroupId,
+                    Is.EqualTo("11111111-1111-1111-1111-111111111111"));
+                Assert.That(userSettings.ChatWindows[1].IsActiveTab, Is.True);
+                Assert.That(string.IsNullOrEmpty(userSettings.ChatWindows[2].TabGroupId), Is.True);
+            });
         }
 
         [Test]

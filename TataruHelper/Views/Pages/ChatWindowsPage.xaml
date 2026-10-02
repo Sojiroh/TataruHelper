@@ -23,13 +23,21 @@
                 <TextBlock Style="{DynamicResource CaptionTextStyle}"
                            Text="{DynamicResource ChatWindowsPageDescription}" />
             </StackPanel>
-            <ui:Button Grid.Column="1"
-                       VerticalAlignment="Center"
-                       Appearance="Primary"
-                       Icon="{ui:SymbolIcon Symbol=Add24}"
-                       Content="{DynamicResource AddButtonText}"
-                       Command="{Binding Shell.AddWindowCommand}"
-                       IsEnabled="{Binding Shell.CanAddWindow}" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <ui:Button VerticalAlignment="Center"
+                           Appearance="Primary"
+                           Icon="{ui:SymbolIcon Symbol=Add24}"
+                           Content="{DynamicResource ChatWindowsNewWindowLabel}"
+                           Command="{Binding Shell.AddWindowCommand}"
+                           IsEnabled="{Binding Shell.CanAddWindow}" />
+                <ui:Button Margin="8,0,0,0"
+                           VerticalAlignment="Center"
+                           Appearance="Secondary"
+                           Icon="{ui:SymbolIcon Symbol=Add24}"
+                           Content="{DynamicResource ChatWindowsNewTabLabel}"
+                           Command="{Binding Shell.AddTabCommand}"
+                           IsEnabled="{Binding Shell.CanAddTab}" />
+            </StackPanel>
         </Grid>
 
         <ListBox Grid.Row="1"
@@ -71,7 +79,16 @@
             <StackPanel>
                 <TextBlock Style="{DynamicResource SectionSubtitleStyle}"
                            Text="{DynamicResource WindowDetailsLabel}"
-                           Margin="0,0,0,12" />
+                           Margin="0,0,0,4" />
+                <TextBlock Style="{DynamicResource CaptionTextStyle}"
+                           Text="{DynamicResource ChatWindowsDeleteTabHint}"
+                           Margin="0,0,0,4" />
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                    <TextBlock Style="{DynamicResource CaptionTextStyle}"
+                               Text="{DynamicResource ChatWindowsSelectedOverlayLabel}" />
+                    <TextBlock Style="{DynamicResource CaptionTextStyle}"
+                               Text="{Binding DataContext.Shell.CurrentChatWindowGroupName, RelativeSource={RelativeSource AncestorType=UserControl}}" />
+                </StackPanel>
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />

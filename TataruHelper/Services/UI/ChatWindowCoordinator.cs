@@ -103,8 +103,21 @@ namespace FFXIVTataruHelper.Services.UI
 
         public void ShowChatWindow(TataruModel tataruModel, ChatWindowViewModel viewModelWindow, MainWindow mainWindow)
         {
-            _chatWindows.Add(_chatWindowFactory.Create(tataruModel, viewModelWindow, mainWindow));
-            _chatWindows[_chatWindows.Count - 1].Show();
+            if (_chatWindows.Any(window => window.ContainsTab(viewModelWindow.WinId)))
+                return;
+
+            var host = string.IsNullOrWhiteSpace(viewModelWindow.TabGroupId)
+                ? null
+                : _chatWindows.FirstOrDefault(window => window.TabGroupId == viewModelWindow.TabGroupId);
+            if (host != null)
+            {
+                host.AddTab(viewModelWindow);
+                return;
+            }
+
+            host = _chatWindowFactory.Create(tataruModel, viewModelWindow, mainWindow);
+            _chatWindows.Add(host);
+            host.Show();
         }
 
         public void CloseAll()
@@ -143,11 +156,14 @@ namespace FFXIVTataruHelper.Services.UI
 
         private void RemoveChatWindow(long winId)
         {
-            var win = _chatWindows.FirstOrDefault(x => x.WinId == winId);
+            var win = _chatWindows.FirstOrDefault(x => x.ContainsTab(winId));
             if (win == null)
             {
                 return;
             }
+
+            if (!win.RemoveTab(winId))
+                return;
 
             _chatWindows.Remove(win);
             win.Close();
@@ -158,6 +174,8 @@ namespace FFXIVTataruHelper.Services.UI
             try
             {
                 binder.AddPropertyCouple(new PropertyCouple<string, string>("Name", "Name"));
+                binder.AddPropertyCouple(new PropertyCouple<string, string>("TabGroupId", "TabGroupId"));
+                binder.AddPropertyCouple(new PropertyCouple<bool, bool>("IsActiveTab", "IsActiveTab"));
                 binder.AddPropertyCouple(new PropertyCouple<double, double>("ChatFontSize", "ChatFontSize"));
                 binder.AddPropertyCouple(new PropertyCouple<double, double>("LineBreakHeight", "LineBreakHeight"));
                 binder.AddPropertyCouple(new PropertyCouple<int, int>("SpacingCount", "SpacingCount"));

@@ -32,6 +32,8 @@ namespace FFXIVTataruHelper
 
         private string _name;
         private long _winId;
+        private string _tabGroupId;
+        private bool _isActiveTab;
 
         private double _chatFontSize;
         private double _lineBreakHeight;
@@ -77,6 +79,29 @@ namespace FFXIVTataruHelper
                 if (_name == value) return;
 
                 _name = value;
+                OnPropertyChanged();
+            }
+        }
+
+        // Missing in older settings: each ungrouped profile still opens its own window.
+        public string TabGroupId
+        {
+            get => _tabGroupId;
+            set
+            {
+                if (_tabGroupId == value) return;
+                _tabGroupId = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public bool IsActiveTab
+        {
+            get => _isActiveTab;
+            set
+            {
+                if (_isActiveTab == value) return;
+                _isActiveTab = value;
                 OnPropertyChanged();
             }
         }
@@ -521,6 +546,8 @@ namespace FFXIVTataruHelper
 
             Name = settings.Name;
             WinId = settings.WinId;
+            TabGroupId = settings.TabGroupId;
+            IsActiveTab = settings.IsActiveTab;
 
             ChatFontSize = settings.ChatFontSize;
             LineBreakHeight = settings.LineBreakHeight;

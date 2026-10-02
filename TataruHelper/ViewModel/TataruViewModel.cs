@@ -10,6 +10,7 @@ using FFXIVTataruHelper.Services.Logging;
 using FFXIVTataruHelper.Services.UI;
 using FFXIVTataruHelper.TataruComponentModel;
 
+using FFXIVTataruHelper.WinUtils;
 using Translation.Models;
 
 namespace FFXIVTataruHelper.ViewModel
@@ -291,6 +292,33 @@ namespace FFXIVTataruHelper.ViewModel
             });
         }
 
+        public void AddNewChatTab(long sourceWinId)
+        {
+            _UiDispatcher.Invoke(() =>
+            {
+                if (!_TataruUIModel.AreSettingsLoaded || ChatWindows.Count >= 10)
+                    return;
+
+                var source = ChatWindows.FirstOrDefault(window => window.WinId == sourceWinId);
+                if (source == null)
+                    return;
+
+                if (string.IsNullOrWhiteSpace(source.TabGroupId))
+                    source.TabGroupId = Guid.NewGuid().ToString("N");
+
+                var winId = ChatWindowIds.Next(ChatWindows.Select(window => window.WinId)
+                    .Concat(_TataruUIModel.ChatWindows.Select(window => window.WinId)));
+                var settings = source.GetSettings();
+                settings.WinId = winId;
+                settings.Name = (winId + 1).ToString();
+                settings.IsActiveTab = true;
+                settings.ShowHideChatKeys = new HotKeyCombination("ShowHideChatKeys" + winId);
+                settings.ClickThoughtChatKeys = new HotKeyCombination("ClickThoughtChatKeys" + winId);
+                settings.ClearChatKeys = new HotKeyCombination("ClearChatKeys" + winId);
+                AddNewChatWindow(settings);
+            });
+        }
+
         /// <summary>
         /// Builds the window a saved set of settings describes.
         /// </summary>
@@ -374,8 +402,7 @@ namespace FFXIVTataruHelper.ViewModel
 
             if (cw != null)
             {
-                cw.IsHiddenByUser = !cw.IsHiddenByUser;
-                cw.IsWindowVisible = !cw.IsWindowVisible;
+                cw.ShowChatWindowCommand.Execute(null);
             }
         }
 

@@ -57,34 +57,60 @@
             </Border.Style>
         </Border>
 
-        <RichTextBox x:Name="ChatRtb" Margin="0" Background="#00000000" IsReadOnly="True" IsUndoEnabled="False"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     FontFamily="{Binding ChatFont, Mode=OneWay}"
-                     FontSize="{Binding ChatFontSize, Mode=OneWay}">
-            <RichTextBox.Style>
-                <Style TargetType="RichTextBox">
-                    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Hidden" />
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsMouseOver, ElementName=RootGrid}" Value="True">
-                            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+        <TabControl x:Name="ChatTabs" Margin="14,14,14,14"
+                    Background="Transparent" BorderThickness="0"
+                    SelectionChanged="ChatTabs_SelectionChanged">
+            <TabControl.Template>
+                <ControlTemplate TargetType="TabControl">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <ScrollViewer x:Name="TabStrip" HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled" Focusable="False">
+                            <TabPanel IsItemsHost="True" KeyboardNavigation.TabIndex="0" />
+                        </ScrollViewer>
+                        <ContentPresenter Grid.Row="1" ContentSource="SelectedContent" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <DataTrigger Binding="{Binding Items.Count, RelativeSource={RelativeSource TemplatedParent}}" Value="1">
+                            <Setter TargetName="TabStrip" Property="Visibility" Value="Collapsed" />
                         </DataTrigger>
-                    </Style.Triggers>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </TabControl.Template>
+            <TabControl.Resources>
+                <Style TargetType="TabItem">
+                    <Setter Property="Foreground" Value="White" />
+                    <Setter Property="Background" Value="#A0202020" />
+                    <Setter Property="Padding" Value="10,4" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TabItem">
+                                <Border x:Name="TabBorder" Background="{TemplateBinding Background}"
+                                        CornerRadius="4,4,0,0" Padding="{TemplateBinding Padding}"
+                                        Margin="0,0,2,2" BorderThickness="0,0,0,2"
+                                        BorderBrush="Transparent">
+                                    <ContentPresenter ContentSource="Header"
+                                                      RecognizesAccessKey="True" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="TabBorder" Property="BorderBrush"
+                                                Value="{DynamicResource Brush.Accent}" />
+                                        <Setter TargetName="TabBorder" Property="Background" Value="#E0404040" />
+                                    </Trigger>
+                                    <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                        <Setter TargetName="TabBorder" Property="BorderBrush" Value="White" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
                 </Style>
-            </RichTextBox.Style>
-            <FlowDocument TextAlignment="Left"
-                          PagePadding="0"
-                          ColumnWidth="{Binding ActualWidth, ElementName=ChatRtb}">
-                <Paragraph>
-                    <Run Text="RichTextBox" />
-                </Paragraph>
-            </FlowDocument>
-            <RichTextBox.Resources>
-                <Style TargetType="{x:Type Paragraph}">
-                    <Setter Property="Margin" Value="0" />
-                    <Setter Property="TextAlignment" Value="Left" />
-                </Style>
-            </RichTextBox.Resources>
-        </RichTextBox>
+            </TabControl.Resources>
+        </TabControl>
 
         <!-- Drag handle chip (visible on hover, anchored top-center) -->
         <Border x:Name="DragChip"
@@ -149,6 +175,8 @@
 
         <Grid.ContextMenu>
             <ContextMenu>
+                <MenuItem Header="{DynamicResource ChatWindowsNewTabLabel}" Click="NewTab_Click" />
+                <Separator />
                 <MenuItem Header="{DynamicResource SettingsHide}" Click="HideThisWindow_Click">
                     <MenuItem.Icon>
                         <ui:SymbolIcon Symbol="EyeOff24" />

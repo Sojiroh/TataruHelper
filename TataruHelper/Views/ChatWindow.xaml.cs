@@ -6,7 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Documents;
+using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -43,8 +43,6 @@ namespace FFXIVTataruHelper
 
         private WindowClickThroughBehavior _clickThroughBehavior;
 
-        private ChatMessageParagraphBuilder _paragraphBuilder;
-
         private DateTime _TextArrivedTime;
 
         private readonly CancellationTokenSource _lifecycleCts =
@@ -52,7 +50,11 @@ namespace FFXIVTataruHelper
 
         private bool _AutoHidden;
 
-        private readonly HashSet<string> _reportedFailureEngines = new HashSet<string>(StringComparer.Ordinal);
+        private readonly List<ChatTabView> _tabs = new List<ChatTabView>();
+        private bool _isLoaded;
+        private bool _isClosing;
+        private bool _switchingTab;
+        private bool _syncingRectangle;
 
         private const uint TopMostSetWindowPosFlags =
             Win32Interfaces.SWP_NOMOVE |
@@ -98,21 +100,13 @@ namespace FFXIVTataruHelper
 
                 this.ShowInTaskbar = false;
 
-                ChatRtb.AcceptsTab = true;
-
-                ChatRtb.BorderThickness = new Thickness(0);
-
-                ChatRtb.Document.Blocks.Clear();
-
-                ChatRtb.IsUndoEnabled = false;
-                ApplyContentPadding();
 
                 _TextArrivedTime = DateTime.UtcNow;
 
                 _AutoHidden = false;
                 _WindowResizer = new WindowResizer(this, _Logger);
                 _clickThroughBehavior = new WindowClickThroughBehavior(this, _Logger);
-                _paragraphBuilder = new ChatMessageParagraphBuilder(_ChatWindowViewModel, _gameIcons);
+                AddTab(chatWindowViewModel);
             }
             catch (Exception e)
             {
@@ -126,7 +120,7 @@ namespace FFXIVTataruHelper
         {
             await this.UIThreadAsync(() =>
             {
-                ChatRtb.Document.Blocks.Clear();
+                SelectedTab?.ClearChat();
             });
         }
 
@@ -136,6 +130,9 @@ namespace FFXIVTataruHelper
 
         protected virtual void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            if (_isLoaded)
+                return;
+            _isLoaded = true;
             AutoHideStatusCheck();
 
             _TataruModel.FFMemoryReader.AddExclusionWindowHandler((new WindowInteropHelper(this).Handle));
@@ -147,11 +144,8 @@ namespace FFXIVTataruHelper
 
             ApplyAlwaysOnTop();
 
-            _ChatWindowViewModel.AsyncPropertyChanged += OnSettingsWindowPropertyChange;
-            _ChatWindowViewModel.RequestChatClear += OnChatClearRequest;
             _TataruModel.FFMemoryReader.AsyncPropertyChanged += OnMemoryReaderPropertyChange;
 
-            _TataruModel.ChatProcessor.TextArrived += OnTextArrived;
             _TataruModel.FFMemoryReader.FFWindowStateChanged += OnFFWindowStateChange;
 
             _dialogueOverlayHost.WantedChanged += OnDialogueOverlayWantedChanged;
@@ -160,6 +154,7 @@ namespace FFXIVTataruHelper
         private void Window_Closing(object sender, CancelEventArgs e)
         {
             _lifecycleCts.Cancel();
+            _isClosing = true;
         }
 
         protected virtual void Window_Deactivated(object sender, EventArgs e)
@@ -172,111 +167,137 @@ namespace FFXIVTataruHelper
 
         #region **UiEvents.
 
-        protected async Task OnTextArrived(ChatMessageArrivedEventArgs ea)
+        public string TabGroupId => _ChatWindowViewModel.TabGroupId;
+
+        private ChatTabView SelectedTab => (ChatTabs.SelectedItem as TabItem)?.Content as ChatTabView;
+
+        public bool ContainsTab(long winId) => _tabs.Any(tab => tab.ViewModel.WinId == winId);
+
+        public void AddTab(ChatWindowViewModel viewModel)
         {
-            string text = "";
-            string speaker = "";
-            Color textColor = Color.FromArgb(255, 255, 255, 255);
-            ChatCodeViewModel chatCode;
-
-            chatCode = _ChatWindowViewModel.ChatCodes.FirstOrDefault(x => x.Code == ea.ChatMessage.Code);
-
-            if (chatCode == null)
-                return;
-            if (!chatCode.IsChecked)
+            if (ContainsTab(viewModel.WinId))
                 return;
 
-            textColor = chatCode.Color;
+            var shouldSelect = _tabs.Count == 0 || viewModel.IsActiveTab;
+            if (_tabs.Count > 0)
+                viewModel.ChatWindowRectangle = _ChatWindowViewModel.ChatWindowRectangle;
 
-            if (ea.ChatMessage.Text.Length > 0)
+            var tab = new ChatTabView(viewModel, _TataruModel.ChatProcessor, _SettingsStore,
+                _UiDispatcher, _Logger, _gameIcons);
+            tab.MessageDisplayed += OnTabMessageDisplayed;
+            viewModel.AsyncPropertyChanged += OnSettingsWindowPropertyChange;
+            var item = new TabItem { Content = tab, DataContext = viewModel };
+            item.SetBinding(HeaderedContentControl.HeaderProperty, new Binding(nameof(ChatWindowViewModel.Name)));
+            _tabs.Add(tab);
+            ChatTabs.Items.Add(item);
+            if (shouldSelect)
+                ChatTabs.SelectedItem = item;
+        }
+
+        public bool RemoveTab(long winId)
+        {
+            var tab = _tabs.FirstOrDefault(candidate => candidate.ViewModel.WinId == winId);
+            if (tab == null)
+                return _tabs.Count == 0;
+
+            tab.ViewModel.AsyncPropertyChanged -= OnSettingsWindowPropertyChange;
+            tab.MessageDisplayed -= OnTabMessageDisplayed;
+            tab.Dispose();
+            _tabs.Remove(tab);
+            var item = ChatTabs.Items.Cast<TabItem>().First(candidate => ReferenceEquals(candidate.Content, tab));
+            ChatTabs.Items.Remove(item);
+            if (_tabs.Count > 0 && ChatTabs.SelectedIndex < 0)
+                ChatTabs.SelectedIndex = 0;
+            return _tabs.Count == 0;
+        }
+
+        private void ChatTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (!ReferenceEquals(e.Source, ChatTabs) || _isClosing || _switchingTab || SelectedTab == null)
+                return;
+
+            _switchingTab = true;
+            try
             {
-                TranslationResult result = default;
-
-                using (var translationCts = new CancellationTokenSource(_SettingsStore.TranslatorWaitTimeMs))
+                var selected = SelectedTab.ViewModel;
+                selected.ChatWindowRectangle = _ChatWindowViewModel.ChatWindowRectangle;
+                _ChatWindowViewModel = selected;
+                if (_isLoaded)
                 {
-                    try
-                    {
-                        result = await _TataruModel.ChatProcessor.Translate(
-                            ea.ChatMessage.Text,
-                            _ChatWindowViewModel.SelectedEngine,
-                            _ChatWindowViewModel.CurrentTranslateFromLanguage,
-                            _ChatWindowViewModel.CurrentTranslateToLanguage,
-                            chatCode.Code,
-                            translationCts.Token);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        result = TranslationResult.Failure(
-                            _ChatWindowViewModel.SelectedEngine?.EngineName ?? default,
-                            TranslationFailureKind.ProviderException,
-                            "Translation timed out.");
-                    }
+                    selected.IsWindowVisible = !selected.IsHiddenByUser &&
+                        _TataruModel.FFMemoryReader.FFWindowState != WindowState.Minimized &&
+                        (selected.IsAlwaysOnTop || _TataruModel.FFMemoryReader.IsGameWindowForeground);
                 }
-
-                if (result.IsSuccess)
+                DataContext = selected;
+                foreach (var tab in _tabs)
+                    tab.ViewModel.IsActiveTab = ReferenceEquals(tab.ViewModel, selected);
+                _TextArrivedTime = DateTime.UtcNow;
+                _AutoHidden = false;
+                CloseDialogueOverlay();
+                if (_isLoaded)
                 {
-                    text = result.Text;
-                    speaker = result.SpeakerName;
-
-                    // The selected engine failed and another one answered instead.
-                    // Adopt it so the picker reflects what is actually translating.
-                    if (_ChatWindowViewModel.SelectedEngine != null &&
-                        result.Engine != _ChatWindowViewModel.SelectedEngine.EngineName)
-                    {
-                        var previousEngineName = _ChatWindowViewModel.SelectedEngine.Name;
-                        var substitute = _ChatWindowViewModel.AvailableEngines
-                            .FirstOrDefault(engine => engine.EngineName == result.Engine);
-
-                        if (substitute != null)
-                        {
-                            // Attached to the line rather than sent as its own
-                            // message: with "show only the last message" on, a
-                            // separate notice is wiped by the very next translation.
-                            text = FormatEngineSwitchNotice(previousEngineName, substitute.Name) + " " + text;
-
-                            _UiDispatcher.Invoke(() => _ChatWindowViewModel.SelectedEngine = substitute);
-                        }
-                    }
-                }
-                else
-                {
-                    var failedEngineName = _ChatWindowViewModel.SelectedEngine?.Name ?? result.Engine.ToString();
-                    if (_reportedFailureEngines.Add(failedEngineName))
-                    {
-                        _UiDispatcher.Invoke(() => ShowFailureNotice(failedEngineName, textColor));
-                    }
-
-                    return;
+                    if (selected.IsClickThrough)
+                        MakeWindowClickThrough();
+                    else
+                        MakeWindowClickable();
+                    ApplyAlwaysOnTop();
+                    ShowWindow();
                 }
             }
-            else
+            finally
             {
-                text = string.Empty;
+                _switchingTab = false;
             }
+        }
 
-            DateTime timeStamp = default(DateTime);
+        private void OnTabMessageDisplayed(ChatTabView tab, string speaker, string text, string sourceLine)
+        {
+            if (_isClosing || !ReferenceEquals(tab, SelectedTab))
+                return;
 
-            if (_ChatWindowViewModel.ShowTimestamps)
-                timeStamp = ea.ChatMessage.TimeStamp;
+            ShowWindow();
+            if (!_ChatWindowViewModel.IsHiddenByUser)
+                _TextArrivedTime = DateTime.UtcNow;
+            EnsureDialogueOverlay()?.SetLine(speaker, text, sourceLine);
+        }
 
-            await this.UIThreadAsync(() =>
-            {
-                ShowWindow();
-
-                if (_ChatWindowViewModel.IsHiddenByUser == false)
-                    _TextArrivedTime = DateTime.UtcNow;
-
-                ShowTranslatedText(text, textColor, speaker, timeStamp, ea.ChatMessage.Text);
-
-                if (_ChatWindowViewModel.IsHiddenByUser == false)
-                    _TextArrivedTime = DateTime.UtcNow;
-            });
+        private void NewTab_Click(object sender, RoutedEventArgs e)
+        {
+            _TataruModel.TataruViewModel.AddNewChatTab(WinId);
         }
 
         protected virtual async Task OnSettingsWindowPropertyChange(AsyncPropertyChangedEventArgs ea)
         {
             await this.UIThreadAsync(() =>
             {
+                if (_isClosing)
+                    return;
+
+                var changed = ea.Sender as ChatWindowViewModel;
+                if (ea.PropertyName == nameof(ChatWindowViewModel.ChatWindowRectangle) && !_syncingRectangle)
+                {
+                    _syncingRectangle = true;
+                    try
+                    {
+                        foreach (var tab in _tabs)
+                            tab.ViewModel.ChatWindowRectangle = changed.ChatWindowRectangle;
+                    }
+                    finally
+                    {
+                        _syncingRectangle = false;
+                    }
+                }
+
+                if (!ReferenceEquals(changed, _ChatWindowViewModel))
+                {
+                    if ((ea.PropertyName == nameof(ChatWindowViewModel.IsActiveTab) && changed.IsActiveTab) ||
+                        (ea.PropertyName == nameof(ChatWindowViewModel.IsWindowVisible) && changed.IsWindowVisible))
+                    {
+                        ChatTabs.SelectedItem = ChatTabs.Items.Cast<TabItem>()
+                            .FirstOrDefault(item => ReferenceEquals(item.DataContext, changed));
+                    }
+                    return;
+                }
                 switch (ea.PropertyName)
                 {
                     case "IsClickThrough":
@@ -322,11 +343,6 @@ namespace FFXIVTataruHelper
                         break;
                     case "BackGroundColor":
                         {
-                            if (_ChatWindowViewModel.BackGroundColor.A == 255)
-                                this.AllowsTransparency = false;
-                            else
-                                this.AllowsTransparency = true;
-
                             if (_ChatWindowViewModel.IsClickThrough)
                             {
                                 MakeWindowClickable();
@@ -334,55 +350,10 @@ namespace FFXIVTataruHelper
                             }
                         }
                         break;
-                    case "ContentPadding":
-                        {
-                            ApplyContentPadding();
-                        }
-                        break;
-                    case "MessageContainerPadding":
-                        {
-                            ApplyMessageContainerVisuals();
-                        }
-                        break;
-                    case "MessageContainerAlpha":
-                        {
-                            ApplyMessageContainerVisuals();
-                        }
-                        break;
-                    case "MessageContainerBorderThickness":
-                        {
-                            ApplyMessageContainerVisuals();
-                        }
-                        break;
-                    case "MessageContainerBorderAlpha":
-                        {
-                            ApplyMessageContainerVisuals();
-                        }
-                        break;
-                    case "MessagesInContainer":
-                        {
-                            if (_ChatWindowViewModel.MessagesInContainer)
-                            {
-                                ApplyMessageContainerVisuals();
-                            }
-                        }
-                        break;
-                    case "ShowOnlyLastMessage":
-                        {
-                            if (_ChatWindowViewModel.ShowOnlyLastMessage)
-                            {
-                                EnforceLastMessageOnly();
-                            }
-                        }
-                        break;
                 }
             });
         }
 
-        protected virtual async Task OnChatClearRequest(TatruEventArgs ea)
-        {
-            await ClearChat();
-        }
 
         protected virtual async Task OnFFWindowStateChange(WindowStateChangeEventArgs ea)
         {
@@ -508,96 +479,6 @@ namespace FFXIVTataruHelper
             });
         }
 
-        void ShowTranslatedText(
-            string translatedMsg, Color color, string speaker = "", DateTime timeStamp = default(DateTime),
-            string sourceLine = null)
-        {
-            try
-            {
-                translatedMsg = translatedMsg.Trim(new char[] { ' ' });
-                if (_ChatWindowViewModel.ShowOnlyLastMessage)
-                {
-                    ChatRtb.Document.Blocks.Clear();
-                }
-
-                EnsureDialogueOverlay()?.SetLine(speaker, translatedMsg, sourceLine);
-
-                Paragraph paragraph = _paragraphBuilder.BuildMessageParagraph(
-                    translatedMsg, color, speaker, timeStamp);
-                ChatRtb.Document.Blocks.Add(paragraph);
-
-                TrimToMaxMessages();
-
-                ChatRtb.ScrollToEnd();
-            }
-            catch (Exception exc)
-            {
-                _Logger.WriteLog(Convert.ToString(exc));
-            }
-        }
-
-        private void ApplyContentPadding()
-        {
-            ChatRtb.Padding = new Thickness(_ChatWindowViewModel.ContentPadding);
-        }
-
-        private void ApplyMessageContainerVisuals()
-        {
-            foreach (var paragraph in ChatRtb.Document.Blocks.OfType<Paragraph>())
-            {
-                foreach (var inline in paragraph.Inlines)
-                {
-                    if (inline is InlineUIContainer container && container.Child is Border border)
-                    {
-                        _paragraphBuilder.ApplyMessageContainerVisual(border);
-                    }
-                }
-            }
-        }
-
-        private void EnforceLastMessageOnly()
-        {
-            while (ChatRtb.Document.Blocks.Count > 1)
-            {
-                ChatRtb.Document.Blocks.Remove(ChatRtb.Document.Blocks.FirstBlock);
-            }
-        }
-
-        private void TrimToMaxMessages()
-        {
-            int maxMessages = _SettingsStore.MaxChatMessages;
-            if (maxMessages <= 0)
-            {
-                return;
-            }
-
-            while (ChatRtb.Document.Blocks.Count > maxMessages)
-            {
-                ChatRtb.Document.Blocks.Remove(ChatRtb.Document.Blocks.FirstBlock);
-            }
-        }
-
-        static string FormatEngineSwitchNotice(string failedEngineName, string newEngineName)
-        {
-            var template = (string)Application.Current.Resources["TranslationEngineSwitched"];
-            return string.Format(template ?? "[{0} → {1}]", failedEngineName, newEngineName);
-        }
-
-        void ShowFailureNotice(string engineName, Color textColor)
-        {
-            var prefix = (string)Application.Current.Resources["TranslationEngineError"];
-            var text = (prefix ?? "Translation failed:") + " " + engineName;
-
-            ShowWindow();
-
-            if (_ChatWindowViewModel.IsHiddenByUser == false)
-                _TextArrivedTime = DateTime.UtcNow;
-
-            ShowTranslatedText(text, textColor);
-
-            if (_ChatWindowViewModel.IsHiddenByUser == false)
-                _TextArrivedTime = DateTime.UtcNow;
-        }
 
         #endregion
 
@@ -789,12 +670,16 @@ namespace FFXIVTataruHelper
             _dialogueOverlayHost.WantedChanged -= OnDialogueOverlayWantedChanged;
             _dialogueOverlayHost.Release(this);
 
-            _ChatWindowViewModel.AsyncPropertyChanged -= OnSettingsWindowPropertyChange;
-            _ChatWindowViewModel.RequestChatClear -= OnChatClearRequest;
             _TataruModel.FFMemoryReader.AsyncPropertyChanged -= OnMemoryReaderPropertyChange;
 
-            _TataruModel.ChatProcessor.TextArrived -= OnTextArrived;
             _TataruModel.FFMemoryReader.FFWindowStateChanged -= OnFFWindowStateChange;
+            foreach (var tab in _tabs)
+            {
+                tab.ViewModel.AsyncPropertyChanged -= OnSettingsWindowPropertyChange;
+                tab.MessageDisplayed -= OnTabMessageDisplayed;
+                tab.Dispose();
+            }
+            _tabs.Clear();
 
             _lifecycleCts.Cancel();
             _lifecycleCts.Dispose();

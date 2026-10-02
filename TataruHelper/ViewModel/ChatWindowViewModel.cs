@@ -57,6 +57,35 @@ namespace FFXIVTataruHelper.ViewModel
 
         public long WinId { get; }
 
+        private string _tabGroupId;
+        private bool _isActiveTab;
+
+        public string TabGroupId
+        {
+            get => _tabGroupId;
+            set
+            {
+                if (_tabGroupId == value) return;
+                _tabGroupId = value;
+                if (_BoundSettings != null)
+                    _BoundSettings.TabGroupId = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public bool IsActiveTab
+        {
+            get => _isActiveTab;
+            set
+            {
+                if (_isActiveTab == value) return;
+                _isActiveTab = value;
+                if (_BoundSettings != null)
+                    _BoundSettings.IsActiveTab = value;
+                OnPropertyChanged();
+            }
+        }
+
         public string Name
         {
             get { return _Name; }
@@ -880,12 +909,7 @@ namespace FFXIVTataruHelper.ViewModel
             {
                 if (e.HotKey.Name == ShowHideChatKeys.Name)
                 {
-                    if (this.IsWindowVisible)
-                        IsHiddenByUser = true;
-                    else
-                        IsHiddenByUser = false;
-
-                    IsWindowVisible = !IsWindowVisible;
+                    ShowChatWindow();
                 }
             }
 
@@ -1069,6 +1093,14 @@ namespace FFXIVTataruHelper.ViewModel
 
         private void ShowChatWindow()
         {
+            if (!string.IsNullOrWhiteSpace(TabGroupId) && !IsActiveTab)
+            {
+                IsHiddenByUser = false;
+                IsActiveTab = true;
+                IsWindowVisible = true;
+                return;
+            }
+
             if (this.IsWindowVisible)
                 IsHiddenByUser = true;
             else

@@ -11,6 +11,8 @@ namespace FFXIVTataruHelper.ViewModel
         public static void ApplyDisplaySettings(ChatWindowViewModel viewModel, ChatWindowViewModelSettings settings)
         {
             viewModel.Name = settings.Name;
+            viewModel.TabGroupId = settings.TabGroupId;
+            viewModel.IsActiveTab = settings.IsActiveTab;
 
             viewModel.ChatFontSize = settings.ChatFontSize;
             viewModel.LineBreakHeight = settings.LineBreakHeight;
@@ -48,6 +50,8 @@ namespace FFXIVTataruHelper.ViewModel
 
             settings.Name = viewModel.Name;
             settings.WinId = viewModel.WinId;
+            settings.TabGroupId = viewModel.TabGroupId;
+            settings.IsActiveTab = viewModel.IsActiveTab;
 
             settings.ChatFontSize = viewModel.ChatFontSize;
             settings.LineBreakHeight = viewModel.LineBreakHeight;

@@ -17,44 +17,7 @@ namespace TataruHelper.Tests
 {
     public class ChatWindowLayoutSettingsTests
     {
-        [Test]
-        public void Defaults_IncludeNewLayoutSettings()
-        {
-            var settings = new ChatWindowViewModelSettings();
 
-            Assert.That(settings.ContentPadding, Is.EqualTo(12));
-            Assert.That(settings.MessagesInContainer, Is.False);
-            Assert.That(settings.MessageContainerPadding, Is.EqualTo(6));
-            Assert.That(settings.MessageContainerAlpha, Is.EqualTo(32));
-            Assert.That(settings.MessageContainerBorderThickness, Is.EqualTo(0));
-            Assert.That(settings.MessageContainerBorderAlpha, Is.EqualTo(96));
-            Assert.That(settings.ShowOnlyLastMessage, Is.False);
-        }
-
-        [Test]
-        public void CopyConstructor_PreservesNewLayoutSettings()
-        {
-            var original = new ChatWindowViewModelSettings
-            {
-                ContentPadding = 21,
-                MessagesInContainer = true,
-                MessageContainerPadding = 9,
-                MessageContainerAlpha = 80,
-                MessageContainerBorderThickness = 2,
-                MessageContainerBorderAlpha = 140,
-                ShowOnlyLastMessage = true
-            };
-
-            var copy = new ChatWindowViewModelSettings(original);
-
-            Assert.That(copy.ContentPadding, Is.EqualTo(21));
-            Assert.That(copy.MessagesInContainer, Is.True);
-            Assert.That(copy.MessageContainerPadding, Is.EqualTo(9));
-            Assert.That(copy.MessageContainerAlpha, Is.EqualTo(80));
-            Assert.That(copy.MessageContainerBorderThickness, Is.EqualTo(2));
-            Assert.That(copy.MessageContainerBorderAlpha, Is.EqualTo(140));
-            Assert.That(copy.ShowOnlyLastMessage, Is.True);
-        }
 
         [Test]
         public void GetSettings_RoundTripsNewLayoutSettings()

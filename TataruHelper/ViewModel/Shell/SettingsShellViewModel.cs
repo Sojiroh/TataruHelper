@@ -174,6 +174,7 @@ public sealed class SettingsShellViewModel : INotifyPropertyChanged, IDisposable
         CopyDiagnosticsCommand = new TataruUICommand(CopyDiagnostics);
         SelectChatWindowCommand = new TataruUICommand(SelectChatWindowByParameter);
         AddWindowCommand = new TataruUICommand(() => _settingsViewModel.AddNewChatWindowCommand.Execute(null));
+        AddTabCommand = new TataruUICommand(AddNewChatTab);
         DeleteWindowCommand = new TataruUICommand(() => _settingsViewModel.DeleteChatWindowCommand.Execute(null));
         ShowHideWindowCommand = new TataruUICommand(ToggleCurrentWindowVisibility);
         ResetPositionCommand = new TataruUICommand(ResetCurrentWindowPosition);
@@ -189,6 +190,7 @@ public sealed class SettingsShellViewModel : INotifyPropertyChanged, IDisposable
         RefreshReferenceTranslationUse();
 
         _settingsViewModel.PropertyChanged += OnSettingsViewModelPropertyChanged;
+        _settingsViewModel.ChatWindows.ListChanged += OnChatProfilesChanged;
         _uiModel.PropertyChanged += OnUiModelPropertyChanged;
 
         // A dispatcher timer, so the check arrives on the thread that reads
@@ -268,6 +270,23 @@ public sealed class SettingsShellViewModel : INotifyPropertyChanged, IDisposable
     }
 
     public ChatWindowViewModel CurrentChatWindow => _settingsViewModel.CurrentChatWindow;
+
+    public string CurrentChatWindowGroupName
+    {
+        get
+        {
+            var current = CurrentChatWindow;
+            if (current == null || string.IsNullOrEmpty(current.TabGroupId))
+            {
+                return current?.Name ?? string.Empty;
+            }
+
+            return _settingsViewModel.ChatWindows
+                .Where(window => window.TabGroupId == current.TabGroupId)
+                .Select(window => window.Name)
+                .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? current.Name;
+        }
+    }
 
     /// <summary>
     /// Translates NPC dialogue as it appears on screen instead of waiting for it
@@ -449,7 +468,14 @@ public sealed class SettingsShellViewModel : INotifyPropertyChanged, IDisposable
     /// have been read in: one added before that takes a number they are about
     /// to use, and the saved window is dropped in its favour.
     /// </summary>
-    public bool CanAddWindow => _uiModel.AreSettingsLoaded;
+    public bool CanAddWindow => _uiModel.AreSettingsLoaded && _settingsViewModel.ChatWindows.Count < 10;
+
+    /// <summary>
+    /// Whether a tab can be added to the selected profile's overlay host.
+    /// </summary>
+    public bool CanAddTab => _uiModel.AreSettingsLoaded &&
+                             CurrentChatWindow != null &&
+                             _settingsViewModel.ChatWindows.Count < 10;
 
     public bool IsHideSettingsToTray
     {
@@ -576,6 +602,8 @@ public sealed class SettingsShellViewModel : INotifyPropertyChanged, IDisposable
     public TataruUICommand SelectChatWindowCommand { get; }
 
     public TataruUICommand AddWindowCommand { get; }
+
+    public TataruUICommand AddTabCommand { get; }
 
     public TataruUICommand DeleteWindowCommand { get; }
 
@@ -996,6 +1024,16 @@ public sealed class SettingsShellViewModel : INotifyPropertyChanged, IDisposable
         }
     }
 
+    private void AddNewChatTab()
+    {
+        if (!CanAddTab || CurrentChatWindow == null)
+        {
+            return;
+        }
+
+        _settingsViewModel.AddNewChatTab(CurrentChatWindow.WinId);
+    }
+
     private void ToggleCurrentWindowVisibility()
     {
         if (CurrentChatWindow == null)
@@ -1038,6 +1076,13 @@ public sealed class SettingsShellViewModel : INotifyPropertyChanged, IDisposable
         return Languages.FirstOrDefault(x => x.Value == value) ?? Languages[0];
     }
 
+    private void OnChatProfilesChanged(object sender, ListChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(CurrentChatWindowGroupName));
+        OnPropertyChanged(nameof(CanAddWindow));
+        OnPropertyChanged(nameof(CanAddTab));
+    }
+
     private void OnSettingsViewModelPropertyChanged(object sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName == nameof(TataruViewModel.SelectedTabIndex) ||
@@ -1047,12 +1092,16 @@ public sealed class SettingsShellViewModel : INotifyPropertyChanged, IDisposable
         {
             OnPropertyChanged(nameof(CurrentChatWindow));
             OnPropertyChanged(nameof(SelectedChatWindowId));
+            OnPropertyChanged(nameof(CurrentChatWindowGroupName));
+            OnPropertyChanged(nameof(CanAddWindow));
+            OnPropertyChanged(nameof(CanAddTab));
 
             // A window may have been added, removed or selected, and each of
             // those changes the set of languages being read.
             RefreshReferenceTranslationUse();
         }
     }
+
 
     private void OnUiModelPropertyChanged(object sender, PropertyChangedEventArgs e)
     {
@@ -1065,7 +1114,7 @@ public sealed class SettingsShellViewModel : INotifyPropertyChanged, IDisposable
         if (e.PropertyName == nameof(TataruUIModel.AreSettingsLoaded))
         {
             OnPropertyChanged(nameof(CanAddWindow));
-
+            OnPropertyChanged(nameof(CanAddTab));
             // The saved windows are in by now, so their languages can finally
             // be asked about.
             RefreshReferenceTranslationUse();
@@ -1158,6 +1207,7 @@ public sealed class SettingsShellViewModel : INotifyPropertyChanged, IDisposable
         }
 
         _settingsViewModel.PropertyChanged -= OnSettingsViewModelPropertyChanged;
+        _settingsViewModel.ChatWindows.ListChanged -= OnChatProfilesChanged;
         _uiModel.PropertyChanged -= OnUiModelPropertyChanged;
 
         if (_watchedChatWindow != null)
